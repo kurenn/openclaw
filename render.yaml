@@ -2,6 +2,7 @@ services:
   - type: web
     name: openclaw
     runtime: docker
+    dockerCommand: "sh -lc 'exec node dist/index.js gateway --allow-unconfigured --bind lan --port \"${PORT:-8080}\"'"
 
     # If you hit OOM on "starter", bump to standard (2GB).
     # There's an open issue noting starter can be too small for gateway init.
@@ -23,6 +24,9 @@ services:
         value: /data/.openclaw
       - key: OPENCLAW_WORKSPACE_DIR
         value: /data/workspace
+
+      - key: OPENCLAW_GATEWAY_BIND
+        value: lan
 
       # Used to secure the gateway
       - key: OPENCLAW_GATEWAY_TOKEN
