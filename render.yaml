@@ -4,18 +4,32 @@ services:
     runtime: docker
     plan: starter
     healthCheckPath: /health
+
+    # IMPORTANT: start the gateway + allow fresh boot + bind to lan (0.0.0.0)
+    dockerCommand:
+      - node
+      - dist/index.js
+      - gateway
+      - --allow-unconfigured
+      - --bind
+      - lan
+
     envVars:
       - key: PORT
         value: "8080"
+
+      # IMPORTANT: make OpenClaw listen on the same port Render scans
+      - key: OPENCLAW_GATEWAY_PORT
+        value: "8080"
+
+      # IMPORTANT: required for --bind lan
+      - key: OPENCLAW_GATEWAY_TOKEN
+        generateValue: true
+
+      # keep your existing vars (examples from their docs)
       - key: SETUP_PASSWORD
         sync: false
       - key: OPENCLAW_STATE_DIR
         value: /data/.openclaw
       - key: OPENCLAW_WORKSPACE_DIR
         value: /data/workspace
-      - key: OPENCLAW_GATEWAY_TOKEN
-        generateValue: true
-    disk:
-      name: openclaw-data
-      mountPath: /data
-      sizeGB: 1
