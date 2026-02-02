@@ -2,6 +2,7 @@ services:
   - type: web
     name: openclaw
     runtime: docker
+    dockerCommand: "node dist/index.js gateway --bind lan --port $PORT"
 
     # If you hit OOM on "starter", bump to standard (2GB).
     # There's an open issue noting starter can be too small for gateway init.
@@ -32,15 +33,3 @@ services:
       name: openclaw-data
       mountPath: /data
       sizeGB: 1
-
-    # Force the gateway to bind to 0.0.0.0:$PORT (LAN) so Render can detect it.
-    dockerCommand:
-      - bash
-      - -lc
-      - |
-        exec node dist/index.js gateway \
-          --allow-unconfigured \
-          --bind lan \
-          --port "${PORT:-8080}" \
-          --auth token \
-          --token "${OPENCLAW_GATEWAY_TOKEN}"
