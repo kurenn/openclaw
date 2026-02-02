@@ -3,37 +3,31 @@ services:
     name: openclaw
     runtime: docker
     plan: starter
-    region: oregon
     autoDeploy: true
 
-    # OpenClaw serves its UI on "/" (Getting Started points you to http://127.0.0.1:18789/).
+    # OpenClaw UI is served by the gateway on the same port.
     healthCheckPath: /
 
-    # IMPORTANT:
-    # - Render requires the process to listen on $PORT and be reachable (not 127.0.0.1 only).
-    # - We run via bash so $PORT expands reliably.
-    dockerCommand: >-
-      bash -lc
-      'exec openclaw gateway run
-      --allow-unconfigured
-      --bind lan
-      --port "${PORT:-8080}"
-      --auth password
-      --password "${OPENCLAW_GATEWAY_PASSWORD}"'
+    # IMPORTANT: dockerCommand must be a SINGLE STRING
+    # Force bind to 0.0.0.0 (lan) and port = Render's $PORT
+    dockerCommand: "sh -lc 'exec node dist/index.js gateway --allow-unconfigured --bind lan --port \"${PORT:-8080}\"'"
 
     envVars:
       - key: PORT
-        value: 8080
+        value: "8080"
+
+      # keep your existing vars
+      - key: SETUP_PASSWORD
+        sync: false
+
+      - key: OPENCLAW_GATEWAY_TOKEN
+        generateValue: true
 
       - key: OPENCLAW_STATE_DIR
         value: /data/.openclaw
 
       - key: OPENCLAW_WORKSPACE_DIR
         value: /data/workspace
-
-      # Set this in Render as a Secret (it will prompt you on first deploy)
-      - key: OPENCLAW_GATEWAY_PASSWORD
-        sync: false
 
     disk:
       name: openclaw-data
