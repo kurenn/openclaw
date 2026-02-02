@@ -2,7 +2,6 @@ services:
   - type: web
     name: openclaw
     runtime: docker
-    dockerCommand: "node dist/index.js gateway --bind lan --port $PORT"
 
     # If you hit OOM on "starter", bump to standard (2GB).
     # There's an open issue noting starter can be too small for gateway init.
