@@ -5,29 +5,62 @@ services:
     plan: starter
     autoDeploy: true
 
-    # OpenClaw UI is served by the gateway on the same port.
+    # OpenClaw's gateway serves the UI on the same port; "/" is a safer default than "/health"
     healthCheckPath: /
 
-    # IMPORTANT: dockerCommand must be a SINGLE STRING
-    # Force bind to 0.0.0.0 (lan) and port = Render's $PORT
-    dockerCommand: "sh -lc 'exec node dist/index.js gateway --allow-unconfigured --bind lan --port \"${PORT:-8080}\"'"
+    # NOTE: Render does NOT support interpolation inside render.yaml values.
+    # So we expand $PORT at runtime inside the shell command. :contentReference[oaicite:3]{index=3}
+    dockerCommand: >-
+      sh -lc '
+        set -e
+
+        # Ensure persistent directories exist
+        mkdir -p /data/.openclaw /data/workspace
+
+        # If the image wrote state into /home/node/.openclaw, migrate it once
+        if [ -d /home/node/.openclaw ] && [ ! -L /home/node/.openclaw ]; then
+          cp -n /home/node/.openclaw/* /data/.openclaw/ 2>/dev/null || true
+          rm -rf /home/node/.openclaw
+        fi
+
+        # Always point ~/.openclaw at the persistent disk
+        if [ ! -e /home/node/.openclaw ]; then
+          ln -s /data/.openclaw /home/node/.openclaw
+        fi
+
+        # Create a default config ONLY on first boot (do not wipe on restarts)
+        if [ ! -f /data/.openclaw/openclaw.json ]; then
+          cat > /data/.openclaw/openclaw.json <<EOF
+          {"gateway":{"mode":"local","controlUi":{"dangerouslyDisableDeviceAuth":true}}}
+          EOF
+        fi
+
+        # Make sure OpenClaw uses the persisted config/state/workspace
+        export OPENCLAW_STATE_DIR=/data/.openclaw
+        export OPENCLAW_WORKSPACE_DIR=/data/workspace
+        export OPENCLAW_CONFIG_PATH=/data/.openclaw/openclaw.json
+
+        # Bind to all interfaces + listen on Render's port
+        exec node dist/index.js gateway --bind lan --port "${PORT:-8080}"
+      '
 
     envVars:
       - key: PORT
         value: "8080"
-
-      # keep your existing vars
-      - key: SETUP_PASSWORD
-        sync: false
-
-      - key: OPENCLAW_GATEWAY_TOKEN
-        generateValue: true
 
       - key: OPENCLAW_STATE_DIR
         value: /data/.openclaw
 
       - key: OPENCLAW_WORKSPACE_DIR
         value: /data/workspace
+
+      # Optional but recommended if you later enable auth.
+      - key: OPENCLAW_GATEWAY_TOKEN
+        generateValue: true
+
+      # Keep if your deployment/setup uses it
+      - key: SETUP_PASSWORD
+        sync: false
 
     disk:
       name: openclaw-data
