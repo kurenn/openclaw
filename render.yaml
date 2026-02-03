@@ -2,68 +2,66 @@ services:
   - type: web
     name: openclaw
     runtime: docker
-    plan: starter
-    autoDeploy: true
 
-    # OpenClaw's gateway serves the UI on the same port; "/" is a safer default than "/health"
+    # Optional but recommended so Render's health checks hit something valid.
+    # OpenClaw's Control UI is served from "/" on the gateway port.
     healthCheckPath: /
 
-    # NOTE: Render does NOT support interpolation inside render.yaml values.
-    # So we expand $PORT at runtime inside the shell command. :contentReference[oaicite:3]{index=3}
-    dockerCommand: >-
-      sh -lc '
-        set -e
-
-        # Ensure persistent directories exist
-        mkdir -p /data/.openclaw /data/workspace
-
-        # If the image wrote state into /home/node/.openclaw, migrate it once
-        if [ -d /home/node/.openclaw ] && [ ! -L /home/node/.openclaw ]; then
-          cp -n /home/node/.openclaw/* /data/.openclaw/ 2>/dev/null || true
-          rm -rf /home/node/.openclaw
-        fi
-
-        # Always point ~/.openclaw at the persistent disk
-        if [ ! -e /home/node/.openclaw ]; then
-          ln -s /data/.openclaw /home/node/.openclaw
-        fi
-
-        # Create a default config ONLY on first boot (do not wipe on restarts)
-        if [ ! -f /data/.openclaw/openclaw.json ]; then
-          cat > /data/.openclaw/openclaw.json <<EOF
-          {"gateway":{"mode":"local","controlUi":{"dangerouslyDisableDeviceAuth":true}}}
-          EOF
-        fi
-
-        # Make sure OpenClaw uses the persisted config/state/workspace
-        export OPENCLAW_STATE_DIR=/data/.openclaw
-        export OPENCLAW_WORKSPACE_DIR=/data/workspace
-        export OPENCLAW_CONFIG_PATH=/data/.openclaw/openclaw.json
-
-        # Bind to all interfaces + listen on Render's port
-        exec node dist/index.js gateway --bind lan --port "${PORT:-8080}"
-      '
-
-    envVars:
-      - key: PORT
-        value: "8080"
-
-      - key: OPENCLAW_STATE_DIR
-        value: /data/.openclaw
-
-      - key: OPENCLAW_WORKSPACE_DIR
-        value: /data/workspace
-
-      # Optional but recommended if you later enable auth.
-      - key: OPENCLAW_GATEWAY_TOKEN
-        generateValue: true
-
-      # Keep if your deployment/setup uses it
-      - key: SETUP_PASSWORD
-        sync: false
-
+    # Persist config + workspace across deploys/restarts
     disk:
       name: openclaw-data
       mountPath: /data
       sizeGB: 10
+
+    envVars:
+      - key: OPENCLAW_STATE_DIR
+        value: /data/.openclaw
+      - key: OPENCLAW_WORKSPACE_DIR
+        value: /data/workspace
+
+      # Strongly recommended: use token auth when binding to LAN/public.
+      # Set this in the Render dashboard (no quotes).
+      # - key: OPENCLAW_GATEWAY_TOKEN
+      #   value: <set-in-render-dashboard>
+
+      # If you prefer password auth, set ONE of these in the Render dashboard (no quotes):
+      # - OPENCLAW_GATEWAY_PASSWORD
+      # - SETUP_PASSWORD
+
+      - key: OPENCLAW_GATEWAY_TOKEN
+        generateValue: true
+
+    dockerCommand: |
+      sh -lc '
+        set -eu
+
+        CONFIG_DIR="${OPENCLAW_STATE_DIR:-/data/.openclaw}"
+        HOME_CONFIG_DIR="${HOME}/.openclaw"
+        CONFIG_FILE="${CONFIG_DIR}/openclaw.json"
+
+        mkdir -p "$CONFIG_DIR" "$HOME_CONFIG_DIR" "${OPENCLAW_WORKSPACE_DIR:-/data/workspace}"
+
+        # Create default config ONLY if it doesn't exist (preserves persisted config)
+        if [ ! -f "$CONFIG_FILE" ]; then
+          cat > "$CONFIG_FILE" <<EOF
+{"gateway":{"mode":"local","bind":"lan","controlUi":{"dangerouslyDisableDeviceAuth":true}}}
+EOF
+        fi
+
+        # Ensure OpenClaw finds the config where it expects it
+        ln -sf "$CONFIG_FILE" "$HOME_CONFIG_DIR/openclaw.json"
+
+        # Build argv safely
+        set -- node dist/index.js gateway --allow-unconfigured --bind lan --port "${PORT:-8080}"
+
+        if [ -n "${OPENCLAW_GATEWAY_TOKEN:-}" ]; then
+          set -- "$@" --auth token --token "$OPENCLAW_GATEWAY_TOKEN"
+        elif [ -n "${OPENCLAW_GATEWAY_PASSWORD:-}" ]; then
+          set -- "$@" --auth password --password "$OPENCLAW_GATEWAY_PASSWORD"
+        elif [ -n "${SETUP_PASSWORD:-}" ]; then
+          set -- "$@" --auth password --password "$SETUP_PASSWORD"
+        fi
+
+        exec "$@"
+      '
 
